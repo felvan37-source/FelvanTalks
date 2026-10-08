@@ -161,30 +161,41 @@
             }
         };
 
-        // 3. Kirim ke Gemini API REST (Menghasilkan koreksi dan respons)
+        // 3. Kirim ke Groq API (Menggunakan Llama 3)
         async function sendToGemini(userText) {
             const level = document.getElementById('cefrLevel').value;
-            // Prompt khusus instruktur bahasa Inggris
-            const prompt = `You are a friendly English tutor. The user is at CEFR level ${level}. 
+            
+            // Prompt sistem
+            const systemPrompt = `You are a friendly English tutor. The user is at CEFR level ${level}. 
             1. If the user makes grammatical or vocabulary errors, point them out gently and provide the correction. 
             2. If the English is good, acknowledge it.
-            3. Then, reply conversationally to keep the discussion going. Keep your response concise (max 3-4 sentences).
-            User said: "${userText}"`;
+            3. Then, reply conversationally to keep the discussion going. Keep your response concise (max 3-4 sentences).`;
 
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+            const url = `https://api.groq.com/openai/v1/chat/completions`;
+            
             const body = {
-                contents: [{ parts: [{ text: prompt }] }]
+                model: "llama3-8b-8192", // Model Meta Llama 3 yang super cepat
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userText }
+                ],
+                temperature: 0.7
             };
 
             try {
                 const response = await fetch(url, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${GEMINI_API_KEY}` // Menggunakan key dari Groq
+                    },
                     body: JSON.stringify(body)
                 });
                 
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
                 const result = await response.json();
-                const aiReply = result.candidates[0].content.parts[0].text;
+                const aiReply = result.choices[0].message.content;
                 
                 addMessage(aiReply, 'ai');
                 fullTranscript += `\nAI: ${aiReply}`;
@@ -194,8 +205,8 @@
                 speakText(aiReply);
                 
             } catch (error) {
-                statusText.innerText = "Error menghubungi Gemini.";
-                console.error(error);
+                statusText.innerText = "Error menghubungi AI. Cek Console (F12).";
+                console.error("Detail Error:", error);
             }
         }
 
