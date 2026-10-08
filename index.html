@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Speaking Practice - Gemini AI</title>
+    <title>Speaking Practice - AI Tutor</title>
     <!-- Font Poppins untuk kesan modern -->
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
@@ -88,12 +88,10 @@
 
     <script>
         // ==========================================
-        // KONFIGURASI PENTING
+        // URL WEB APP GAS ANDA (SUDAH DISISIPKAN)
         // ==========================================
-        // GANTI STRING DI BAWAH DENGAN URL WEB APP GAS ANDA
         const GAS_URL = "https://script.google.com/macros/s/AKfycbz-BEryLMLIrAlMfVECQCw9KNAtckm83oDI85bbtP06rCb6jYhMBWTqUCiDhaTxeJK8/exec"; 
         
-        let GEMINI_API_KEY = "";
         let fullTranscript = ""; // Menyimpan semua teks untuk dikirim ke Sheets
 
         const chatBox = document.getElementById('chatBox');
@@ -102,21 +100,7 @@
         const btnStop = document.getElementById('btnStop');
         const btnSave = document.getElementById('btnSave');
 
-        // 1. Ambil API Key dari GAS secara diam-diam saat halaman dimuat
-        async function fetchApiKey() {
-            try {
-                const response = await fetch(GAS_URL);
-                const data = await response.json();
-                GEMINI_API_KEY = data.apiKey;
-                console.log("Sistem AI berhasil terhubung.");
-            } catch (error) {
-                statusText.innerText = "Gagal mengambil API Key. Cek URL GAS.";
-                console.error(error);
-            }
-        }
-        fetchApiKey();
-
-        // 2. Setup Web Speech API (Microphone ke Teks)
+        // 1. Setup Web Speech API (Microphone ke Teks)
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {
             alert("Browser Anda tidak mendukung Speech Recognition. Gunakan Google Chrome.");
@@ -124,12 +108,11 @@
         const recognition = new SpeechRecognition();
         recognition.lang = 'en-US';
         recognition.interimResults = false;
-        recognition.continuous = false; // Berhenti otomatis saat jeda bicara
+        recognition.continuous = false; 
 
         let finalSpeechText = "";
 
         btnRecord.addEventListener('click', () => {
-            if (!GEMINI_API_KEY) return alert("Sistem AI belum siap, tunggu sebentar.");
             recognition.start();
             btnRecord.style.display = "none";
             btnStop.style.display = "flex";
@@ -141,7 +124,7 @@
             recognition.stop();
         });
 
-        recognition.onresult = async (event) => {
+        recognition.onresult = (event) => {
             finalSpeechText = event.results[0][0].transcript;
             addMessage(finalSpeechText, 'user');
             fullTranscript += `\nUser: ${finalSpeechText}`;
@@ -154,73 +137,54 @@
             
             if(finalSpeechText.trim() !== "") {
                 statusText.innerText = "Memproses balasan AI...";
-                sendToGemini(finalSpeechText);
+                sendToGAS(finalSpeechText);
                 finalSpeechText = ""; // Reset
             } else {
                 statusText.innerText = "Suara tidak terdengar.";
             }
         };
 
-        // 3. Kirim ke Groq API (Menggunakan Llama 3)
-        async function sendToGemini(userText) {
+        // 2. Fungsi memanggil Backend GAS untuk Chat ke AI (Anti-CORS)
+        async function sendToGAS(userText) {
             const level = document.getElementById('cefrLevel').value;
-            
-            // Prompt sistem
-            const systemPrompt = `You are a friendly English tutor. The user is at CEFR level ${level}. 
-            1. If the user makes grammatical or vocabulary errors, point them out gently and provide the correction. 
-            2. If the English is good, acknowledge it.
-            3. Then, reply conversationally to keep the discussion going. Keep your response concise (max 3-4 sentences).`;
-
-            const url = `https://api.groq.com/openai/v1/chat/completions`;
-            
-            const body = {
-                model: "llama3-8b-8192", // Model Meta Llama 3 yang super cepat
-                messages: [
-                    { role: "system", content: systemPrompt },
-                    { role: "user", content: userText }
-                ],
-                temperature: 0.7
-            };
+            // Kirim payload dengan action: "chat"
+            const payload = { action: "chat", level: level, userText: userText };
 
             try {
-                const response = await fetch(url, {
+                const response = await fetch(GAS_URL, {
                     method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${GEMINI_API_KEY}` // Menggunakan key dari Groq
-                    },
-                    body: JSON.stringify(body)
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload)
                 });
                 
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                
                 const result = await response.json();
-                const aiReply = result.choices[0].message.content;
                 
-                addMessage(aiReply, 'ai');
-                fullTranscript += `\nAI: ${aiReply}`;
-                statusText.innerText = "Sistem siap digunakan.";
-                
-                // Ubah Teks AI menjadi Suara
-                speakText(aiReply);
-                
+                if (result.status === "sukses") {
+                    addMessage(result.reply, 'ai');
+                    fullTranscript += `\nAI: ${result.reply}`;
+                    statusText.innerText = "Sistem siap digunakan.";
+                    speakText(result.reply);
+                } else {
+                    statusText.innerText = "Error: " + result.pesan;
+                    console.error("AI Error:", result.pesan);
+                }
             } catch (error) {
-                statusText.innerText = "Error menghubungi AI. Cek Console (F12).";
-                console.error("Detail Error:", error);
+                statusText.innerText = "Gagal terhubung ke server.";
+                console.error("Fetch Error:", error);
             }
         }
 
-        // 4. Setup Text to Speech (AI menjawab dengan Suara)
+        // 3. Setup Text to Speech (AI menjawab dengan Suara)
         function speakText(text) {
-            // Bersihkan format markdown (seperti * atau **) agar suara lebih natural
+            // Bersihkan format markdown agar suara lebih natural
             const cleanText = text.replace(/[*#]/g, '');
             const speech = new SpeechSynthesisUtterance(cleanText);
             speech.lang = 'en-US';
-            speech.rate = 0.9; // Sedikit dilambatkan agar mudah dipahami
+            speech.rate = 0.9; 
             window.speechSynthesis.speak(speech);
         }
 
-        // Fungsi bantuan menambah gelembung chat
+        // Fungsi bantuan menambah gelembung chat ke UI
         function addMessage(text, sender) {
             const div = document.createElement('div');
             div.classList.add('message');
@@ -230,7 +194,7 @@
             chatBox.scrollTop = chatBox.scrollHeight;
         }
 
-        // 5. Simpan Data ke Google Sheets lewat GAS
+        // 4. Simpan Data ke Google Sheets lewat GAS (action: "simpan")
         btnSave.addEventListener('click', async () => {
             const name = document.getElementById('userName').value;
             const level = document.getElementById('cefrLevel').value;
@@ -240,16 +204,17 @@
 
             btnSave.innerText = "⏳ Menyimpan...";
             
-            const payload = {
-                nama: name,
-                level: level,
-                transkrip: fullTranscript
+            const payload = { 
+                action: "simpan", 
+                nama: name, 
+                level: level, 
+                transkrip: fullTranscript 
             };
 
             try {
                 const response = await fetch(GAS_URL, {
                     method: "POST",
-                    headers: { "Content-Type": "text/plain;charset=utf-8" }, // Bypass CORS
+                    headers: { "Content-Type": "text/plain;charset=utf-8" }, 
                     body: JSON.stringify(payload)
                 });
                 
