@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speaking Practice - Gemini AI</title>
+    <!-- Font Poppins untuk kesan modern -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #f97316; /* Orange */
+            --primary-hover: #ea580c;
+            --bg-color: #fff7ed; /* Light orange bg */
+            --text-dark: #1e293b;
+            --white: #ffffff;
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Poppins', sans-serif; }
+        
+        body { background-color: var(--bg-color); color: var(--text-dark); display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
+
+        .container { background: var(--white); width: 100%; max-width: 600px; border-radius: 16px; padding: 30px; box-shadow: var(--shadow); margin-top: 20px; }
+
+        h1 { color: var(--primary); text-align: center; font-size: 24px; margin-bottom: 20px; }
+
+        .form-group { margin-bottom: 15px; }
+        label { font-size: 14px; font-weight: 600; margin-bottom: 5px; display: block; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; outline: none; transition: border 0.3s; }
+        input:focus, select:focus { border-color: var(--primary); }
+
+        .chat-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; height: 300px; overflow-y: auto; padding: 15px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 10px; }
+        
+        .message { max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; }
+        .user-msg { background: var(--primary); color: var(--white); align-self: flex-end; border-bottom-right-radius: 2px; }
+        .ai-msg { background: #e2e8f0; color: var(--text-dark); align-self: flex-start; border-bottom-left-radius: 2px; }
+
+        .btn-group { display: flex; gap: 10px; margin-bottom: 15px; }
+        button { flex: 1; padding: 12px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.3s; color: var(--white); display: flex; justify-content: center; align-items: center; gap: 8px; }
+        
+        .btn-record { background-color: var(--primary); }
+        .btn-record:hover { background-color: var(--primary-hover); }
+        .btn-stop { background-color: #ef4444; display: none; }
+        .btn-save { background-color: #10b981; width: 100%; }
+        .btn-save:hover { background-color: #059669; }
+
+        #status { text-align: center; font-size: 12px; color: #64748b; margin-top: -10px; margin-bottom: 10px; height: 18px; }
+        
+        /* Animasi recording */
+        .recording { animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.02); background-color: #ef4444; } 100% { transform: scale(1); } }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🎙️ Speaking AI Tutor</h1>
+        
+        <div class="form-group">
+            <label>Nama Anda</label>
+            <input type="text" id="userName" placeholder="Masukkan nama...">
+        </div>
+
+        <div class="form-group">
+            <label>Pilih Level CEFR Anda</label>
+            <select id="cefrLevel">
+                <option value="A1 (Beginner)">A1 (Beginner)</option>
+                <option value="A2 (Elementary)">A2 (Elementary)</option>
+                <option value="B1 (Intermediate)">B1 (Intermediate)</option>
+                <option value="B2 (Upper Intermediate)">B2 (Upper Intermediate)</option>
+                <option value="C1 (Advanced)">C1 (Advanced)</option>
+            </select>
+        </div>
+
+        <div class="chat-box" id="chatBox">
+            <div class="message ai-msg">Hello! I am your AI speaking tutor. Choose your level, click 'Mulai Bicara', and say something in English!</div>
+        </div>
+
+        <div id="status">Sistem siap digunakan.</div>
+
+        <div class="btn-group">
+            <button class="btn-record" id="btnRecord">🎤 Mulai Bicara</button>
+            <button class="btn-stop" id="btnStop">⏹️ Hentikan & Kirim</button>
+        </div>
+
+        <button class="btn-save" id="btnSave">💾 Simpan Hasil ke Sheets</button>
+    </div>
+
+    <script>
+        // ==========================================
+        // KONFIGURASI PENTING
+        // ==========================================
+        // GANTI STRING DI BAWAH DENGAN URL WEB APP GAS ANDA
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbz-BEryLMLIrAlMfVECQCw9KNAtckm83oDI85bbtP06rCb6jYhMBWTqUCiDhaTxeJK8/exec"; 
+        
+        let GEMINI_API_KEY = "";
+        let fullTranscript = ""; // Menyimpan semua teks untuk dikirim ke Sheets
+
+        const chatBox = document.getElementById('chatBox');
+        const statusText = document.getElementById('status');
+        const btnRecord = document.getElementById('btnRecord');
+        const btnStop = document.getElementById('btnStop');
+        const btnSave = document.getElementById('btnSave');
+
+        // 1. Ambil API Key dari GAS secara diam-diam saat halaman dimuat
+        async function fetchApiKey() {
+            try {
+                const response = await fetch(GAS_URL);
+                const data = await response.json();
+                GEMINI_API_KEY = data.apiKey;
+                console.log("Sistem AI berhasil terhubung.");
+            } catch (error) {
+                statusText.innerText = "Gagal mengambil API Key. Cek URL GAS.";
+                console.error(error);
+            }
+        }
+        fetchApiKey();
+
+        // 2. Setup Web Speech API (Microphone ke Teks)
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            alert("Browser Anda tidak mendukung Speech Recognition. Gunakan Google Chrome.");
+        }
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'en-US';
+        recognition.interimResults = false;
+        recognition.continuous = false; // Berhenti otomatis saat jeda bicara
+
+        let finalSpeechText = "";
+
+        btnRecord.addEventListener('click', () => {
+            if (!GEMINI_API_KEY) return alert("Sistem AI belum siap, tunggu sebentar.");
+            recognition.start();
+            btnRecord.style.display = "none";
+            btnStop.style.display = "flex";
+            btnStop.classList.add("recording");
+            statusText.innerText = "Sedang mendengarkan... (Bicaralah sekarang)";
+        });
+
+        btnStop.addEventListener('click', () => {
+            recognition.stop();
+        });
+
+        recognition.onresult = async (event) => {
+            finalSpeechText = event.results[0][0].transcript;
+            addMessage(finalSpeechText, 'user');
+            fullTranscript += `\nUser: ${finalSpeechText}`;
+        };
+
+        recognition.onend = () => {
+            btnRecord.style.display = "flex";
+            btnStop.style.display = "none";
+            btnStop.classList.remove("recording");
+            
+            if(finalSpeechText.trim() !== "") {
+                statusText.innerText = "Memproses balasan AI...";
+                sendToGemini(finalSpeechText);
+                finalSpeechText = ""; // Reset
+            } else {
+                statusText.innerText = "Suara tidak terdengar.";
+            }
+        };
+
+        // 3. Kirim ke Gemini API REST (Menghasilkan koreksi dan respons)
+        async function sendToGemini(userText) {
+            const level = document.getElementById('cefrLevel').value;
+            // Prompt khusus instruktur bahasa Inggris
+            const prompt = `You are a friendly English tutor. The user is at CEFR level ${level}. 
+            1. If the user makes grammatical or vocabulary errors, point them out gently and provide the correction. 
+            2. If the English is good, acknowledge it.
+            3. Then, reply conversationally to keep the discussion going. Keep your response concise (max 3-4 sentences).
+            User said: "${userText}"`;
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+            const body = {
+                contents: [{ parts: [{ text: prompt }] }]
+            };
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                
+                const result = await response.json();
+                const aiReply = result.candidates[0].content.parts[0].text;
+                
+                addMessage(aiReply, 'ai');
+                fullTranscript += `\nAI: ${aiReply}`;
+                statusText.innerText = "Sistem siap digunakan.";
+                
+                // Ubah Teks AI menjadi Suara
+                speakText(aiReply);
+                
+            } catch (error) {
+                statusText.innerText = "Error menghubungi Gemini.";
+                console.error(error);
+            }
+        }
+
+        // 4. Setup Text to Speech (AI menjawab dengan Suara)
+        function speakText(text) {
+            // Bersihkan format markdown (seperti * atau **) agar suara lebih natural
+            const cleanText = text.replace(/[*#]/g, '');
+            const speech = new SpeechSynthesisUtterance(cleanText);
+            speech.lang = 'en-US';
+            speech.rate = 0.9; // Sedikit dilambatkan agar mudah dipahami
+            window.speechSynthesis.speak(speech);
+        }
+
+        // Fungsi bantuan menambah gelembung chat
+        function addMessage(text, sender) {
+            const div = document.createElement('div');
+            div.classList.add('message');
+            div.classList.add(sender === 'user' ? 'user-msg' : 'ai-msg');
+            div.innerText = text;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        // 5. Simpan Data ke Google Sheets lewat GAS
+        btnSave.addEventListener('click', async () => {
+            const name = document.getElementById('userName').value;
+            const level = document.getElementById('cefrLevel').value;
+
+            if (!name) return alert("Silakan isi nama Anda terlebih dahulu.");
+            if (!fullTranscript) return alert("Belum ada percakapan untuk disimpan.");
+
+            btnSave.innerText = "⏳ Menyimpan...";
+            
+            const payload = {
+                nama: name,
+                level: level,
+                transkrip: fullTranscript
+            };
+
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain;charset=utf-8" }, // Bypass CORS
+                    body: JSON.stringify(payload)
+                });
+                
+                const result = await response.json();
+                alert(result.pesan); // Notifikasi Sukses
+                
+            } catch (error) {
+                alert("Gagal menyimpan data.");
+                console.error(error);
+            } finally {
+                btnSave.innerText = "💾 Simpan Hasil ke Sheets";
+            }
+        });
+
+    </script>
+</body>
+</html>
